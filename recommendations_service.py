@@ -4,6 +4,7 @@ from typing import Dict, List, Set
 import pandas as pd
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
+from tqdm import tqdm
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -49,73 +50,78 @@ def load_offline_recs() -> Dict[int, List[int]]:
     if not OFFLINE_RECS_PATH.exists():
         return {}
 
+    print("Loading offline recommendations...")
     df = pd.read_parquet(OFFLINE_RECS_PATH)
 
-    user_col = detect_column(
-        df, ["user_id", "userid"], OFFLINE_RECS_PATH.name
-    )
-    item_col = detect_column(
-        df, ["item_id", "track_id", "itemid"], OFFLINE_RECS_PATH.name
-    )
+    user_col = detect_column(df, ["user_id", "userid"], OFFLINE_RECS_PATH.name)
+    item_col = detect_column(df, ["item_id", "track_id", "itemid"], OFFLINE_RECS_PATH.name)
 
     if "rank" in df.columns:
         df = df.sort_values([user_col, "rank"])
     elif "score" in df.columns:
         df = df.sort_values([user_col, "score"], ascending=[True, False])
 
-    return (
-        df.groupby(user_col)[item_col]
-        .apply(list)
-        .to_dict()
-    )
+    recs = {}
+
+    for user_id, group in tqdm(df.groupby(user_col), desc="Building offline recs"):
+        recs[user_id] = group[item_col].tolist()
+
+    print("Offline recommendations loaded")
+
+    return recs
 
 
 def load_popular_recs() -> List[int]:
     if not POPULAR_RECS_PATH.exists():
         return []
 
+    print("Loading popular recommendations...")
     df = pd.read_parquet(POPULAR_RECS_PATH)
 
-    item_col = detect_column(
-        df, ["item_id", "track_id", "itemid"], POPULAR_RECS_PATH.name
-    )
+    item_col = detect_column(df, ["item_id", "track_id", "itemid"], POPULAR_RECS_PATH.name)
 
     if "rank" in df.columns:
         df = df.sort_values("rank")
     elif "score" in df.columns:
         df = df.sort_values("score", ascending=False)
 
-    return df[item_col].drop_duplicates().tolist()
+    popular = []
+
+    for item in tqdm(df[item_col].tolist(), desc="Building popular list"):
+        popular.append(item)
+
+    print("Popular recommendations loaded")
+
+    return popular
 
 
 def load_online_history() -> Dict[int, List[int]]:
     if not EVENTS_PATH.exists():
         return {}
 
+    print("Loading user history...")
     df = pd.read_parquet(EVENTS_PATH)
 
-    user_col = detect_column(
-        df, ["user_id", "userid"], EVENTS_PATH.name
-    )
-    item_col = detect_column(
-        df, ["item_id", "track_id", "itemid"], EVENTS_PATH.name
-    )
+    user_col = detect_column(df, ["user_id", "userid"], EVENTS_PATH.name)
+    item_col = detect_column(df, ["item_id", "track_id", "itemid"], EVENTS_PATH.name)
 
-    if "timestamp" in df.columns:
-        df = df.sort_values([user_col, "timestamp"])
-    elif "event_date" in df.columns:
-        df = df.sort_values([user_col, "event_date"])
+    history = {}
 
-    return (
-        df.groupby(user_col)[item_col]
-        .apply(list)
-        .to_dict()
-    )
+    for user_id, group in tqdm(df.groupby(user_col), desc="Building user history"):
+        history[user_id] = group[item_col].tolist()
 
+    print("User history loaded")
+
+    return history
+
+
+print("Starting recommendation service...")
 
 OFFLINE_RECS = load_offline_recs()
 POPULAR_RECS = load_popular_recs()
 ONLINE_HISTORY = load_online_history()
+
+print("All data loaded. Service ready.")
 
 
 def build_online_candidates(history_items: List[int], popular_items: List[int]) -> List[int]:
