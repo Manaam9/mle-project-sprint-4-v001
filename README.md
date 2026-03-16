@@ -11,9 +11,6 @@
 
 Рекомендации выдаются через **FastAPI-микросервис**.
 
-Проект выполнен в рамках курса
-**Machine Learning Engineer — Yandex Practicum**.
-
 ---
 
 # Architecture
